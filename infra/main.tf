@@ -19,31 +19,7 @@ provider "azurerm" {
   }
 }
 
-# --- CONFIGURATION ---
-# 1. Primary Location: Canada East (Must match your App Service Plan)
-variable "location" { default = "Canada East" }
-variable "project_name" { default = "doc-pipeline" }
-
-# Existing Resources
-variable "existing_asp_name" { default = "ASP-rfpgroup-b0bb" }
-variable "existing_asp_rg"   { default = "rfp_group" }
-variable "existing_di_name"  { default = "rfp-docintelligence" }
-variable "existing_di_rg"    { default = "rfp_group" }
-
-# --- DATA SOURCES ---
-
-data "azurerm_service_plan" "existing_asp" {
-  name                = var.existing_asp_name
-  resource_group_name = var.existing_asp_rg
-}
-
-data "azurerm_cognitive_account" "existing_doc_intel" {
-  name                = var.existing_di_name
-  resource_group_name = var.existing_di_rg
-}
-
-# --- NEW RESOURCES ---
-
+# --- RANDOMNESS ---
 resource "random_string" "suffix" {
   length  = 4
   special = false
@@ -56,19 +32,26 @@ resource "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-# Resource Group in Canada East
+# --- RESOURCE GROUP ---
 resource "azurerm_resource_group" "rg" {
-  name     = "rg-${var.project_name}-${random_string.suffix.result}"
-  location = var.location 
+  name     = "rg-${var.project_name}-${var.environment}"
+  location = var.location_primary
 }
 
-# 1. Storage Account (Canada East)
+# --- 1. STORAGE ACCOUNT ---
 resource "azurerm_storage_account" "sa" {
-  name                     = "st${replace(var.project_name, "-", "")}${random_string.suffix.result}"
+  name                     = "st${replace(var.project_name, "-", "")}${var.environment}${random_string.suffix.result}"
   resource_group_name      = azurerm_resource_group.rg.name
   location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
+}
+
+resource "azurerm_application_insights" "app_insights" {
+  name                = "appin-${var.project_name}-${var.environment}"
+  location            = var.location_primary
+  resource_group_name = azurerm_resource_group.rg.name
+  application_type    = "web"
 }
 
 resource "azurerm_storage_container" "input_container" {
@@ -77,13 +60,20 @@ resource "azurerm_storage_container" "input_container" {
   container_access_type = "private"
 }
 
-# 2. PostgreSQL (North Europe - HARDCODED OVERRIDE)
-# This resource lives in the Canada East RG, but is physically deployed in North Europe.
-# This is a valid Azure configuration and bypasses your quota limits.
+# --- 2. AI SERVICES (Document Intelligence) ---
+resource "azurerm_cognitive_account" "doc_intel" {
+  name                = "cog-di-${var.project_name}-${var.environment}-${random_string.suffix.result}"
+  location            = var.location_ai 
+  resource_group_name = azurerm_resource_group.rg.name
+  kind                = "FormRecognizer"
+  sku_name            = "S0"
+}
+
+# --- 3. DATABASE (PostgreSQL) ---
 resource "azurerm_postgresql_flexible_server" "postgres" {
-  name                   = "psql-${var.project_name}-${random_string.suffix.result}"
+  name                   = "psql-${var.project_name}-${var.environment}-${random_string.suffix.result}"
   resource_group_name    = azurerm_resource_group.rg.name
-  location               = "North Europe" 
+  location               = var.location_database
   version                = "16"
   sku_name               = "B_Standard_B1ms"
   
@@ -107,15 +97,23 @@ resource "azurerm_postgresql_flexible_server_database" "docs_db" {
   charset   = "utf8"
 }
 
-# 3. Function App (Canada East)
-resource "azurerm_linux_function_app" "func" {
-  name                = "func-${var.project_name}-${random_string.suffix.result}"
+# --- 4. COMPUTE (App Service Plan & Function) ---
+resource "azurerm_service_plan" "asp" {
+  name                = "asp-${var.project_name}-${var.environment}"
   resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location # Canada East
+  location            = azurerm_resource_group.rg.location
+  os_type             = "Linux"
+  sku_name            = "Y1" 
+}
+
+resource "azurerm_linux_function_app" "func" {
+  name                = "func-${var.project_name}-${var.environment}-${random_string.suffix.result}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
 
   storage_account_name       = azurerm_storage_account.sa.name
   storage_account_access_key = azurerm_storage_account.sa.primary_access_key
-  service_plan_id            = data.azurerm_service_plan.existing_asp.id
+  service_plan_id            = azurerm_service_plan.asp.id
 
   site_config {
     application_stack {
@@ -124,19 +122,20 @@ resource "azurerm_linux_function_app" "func" {
   }
 
   app_settings = {
-    "DI_ENDPOINT"            = data.azurerm_cognitive_account.existing_doc_intel.endpoint
-    "DI_KEY"                 = data.azurerm_cognitive_account.existing_doc_intel.primary_access_key
+    # Generated Settings
+    "DI_ENDPOINT"            = azurerm_cognitive_account.doc_intel.endpoint
+    "DI_KEY"                 = azurerm_cognitive_account.doc_intel.primary_access_key
     "INPUT_CONTAINER_NAME"   = azurerm_storage_container.input_container.name
     "AzureWebJobsStorage"    = azurerm_storage_account.sa.primary_connection_string
-    
-    # DB Connection (Points to North Europe server)
     "DB_CONNECTION_STRING"   = "postgresql://psqladmin:${random_password.db_password.result}@${azurerm_postgresql_flexible_server.postgres.fqdn}:5432/documents_db"
+    "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.app_insights.connection_string
+    "APPINSIGHTS_INSTRUMENTATIONKEY"        = azurerm_application_insights.app_insights.instrumentation_key
     
-    # OpenAI
+    # Secrets from Variables
     "OPENAI_ENDPOINT"        = var.openai_endpoint
     "OPENAI_KEY"             = var.openai_key
-    "OPENAI_DEPLOYMENT"      = "gpt-4o-rfp"
-    "OPENAI_API_VERSION"     = "2025-01-01-preview"
+    "OPENAI_DEPLOYMENT"      = var.openai_deployment
+    "OPENAI_API_VERSION"     = var.openai_api_version
     
     "FUNCTIONS_WORKER_RUNTIME" = "python"
   }
