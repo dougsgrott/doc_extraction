@@ -37,7 +37,6 @@ obj/
 # -------------------------
 # Terraform
 # -------------------------
-infra/variables.tf
 infra/.terraform/
 infra/.terraform.lock.hcl
 infra/terraform.tfstate
