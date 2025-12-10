@@ -1,0 +1,6 @@
+azure-functions
+azure-ai-documentintelligence
+azure-core
+sqlalchemy
+psycopg2-binary
+openai

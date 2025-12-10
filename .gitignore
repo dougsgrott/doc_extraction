@@ -1,0 +1,101 @@
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments & Python package directories
+.venv/
+venv/
+env/
+.python_packages/
+.pyenv/
+python-env/
+*.egg-info/
+pip-wheel-metadata/
+
+# Local Python config
+.pytest_cache/
+.coverage
+*.cover
+dist/
+build/
+
+# -------------------------
+# Azure Functions
+# -------------------------
+# Local settings should not be committed
+local.settings.json
+
+# Azure Function artifacts
+bin/
+obj/
+
+# -------------------------
+# Terraform
+# -------------------------
+infra/variables.tf
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+
+# -------------------------
+# Git internal noise (outside .git folder)
+# -------------------------
+*.lock
+CACHEDIR.TAG
+pyvenv.cfg
+
+# -------------------------
+# Environment / Config
+# -------------------------
+.env
+*.env.*
+*.secret
+*.token
+*.key
+*.pem
+
+# -------------------------
+# OS / Editor Files
+# -------------------------
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# JetBrains
+.idea/
+
+# -------------------------
+# Logs
+# -------------------------
+*.log
+
+# -------------------------
+# Project-specific ignores
+# -------------------------
+# JSON that seems to be test/sample data
+some_json.json
+
+# Byte-compiled artifacts in src/services
+src/.python_packages/
+
+# UV or package manager lockfiles (if not intended to be committed)
+uv.lock
+
+# Compiler ignore script outputs (if any)
+ignore_compiler_output/
+
+# -------------------------
+# Ignore files/folders starting with "ignore"
+# -------------------------
+ignore*
